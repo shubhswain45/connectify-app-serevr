@@ -1,12 +1,26 @@
 import { prismaClient } from "../../clients/db";
 import { emailVerificationClient } from "../../clients/redis";
-import { SignupUserInput, VerifyEmailInput } from "../../interfaces";
+import { GraphqlContext, LoginUserInput, SignupUserInput, VerifyEmailInput } from "../../interfaces";
 import JWTService from "../../services/JWTService";
 import NodeMailerService from "../../services/NodeMailerService";
 import bcrypt from 'bcryptjs'
 
+const queries = {
+    getCurrentUser: async (parent: any, args: any, ctx: GraphqlContext) => {
+        try {
+            const id = ctx.user?.id;
+            if (!id) return null;
+
+            const user = await prismaClient.user.findUnique({ where: { id } });
+            return user;
+        } catch (error) {
+            return null;
+        }
+    }
+};
+
 const mutations = {
-    signupUser: async (parent: any, { input }: { input: SignupUserInput }, ctx: any) => {
+    signupUser: async (parent: any, { input }: { input: SignupUserInput }, ctx: GraphqlContext) => {
         const { email, username } = input;
 
         try {
@@ -43,7 +57,7 @@ const mutations = {
         }
     },
 
-    verifyEmail: async (parent: any, { input }: { input: VerifyEmailInput }, ctx: any) => {
+    verifyEmail: async (parent: any, { input }: { input: VerifyEmailInput }, ctx: GraphqlContext) => {
         const { email, username, fullName, password, token } = input
 
         try {
@@ -90,13 +104,55 @@ const mutations = {
 
             NodeMailerService.sendWelcomeEmail(email, user?.username || "");
 
-            return user
+            return { ...user, authToken: userToken }
+
         } catch (error: any) {
             console.error('Error in verifyEmail:', error);
+            throw new Error(error.message || 'An unexpected error occurred.');
+        }
+    },
+
+    loginUser: async (parent: any, { input }: { input: LoginUserInput }, ctx: GraphqlContext) => {
+        const { usernameOrEmail, password } = input
+
+        try {
+            const existingUser = await prismaClient.user.findFirst({
+                where: {
+                    OR: [
+                        { username: usernameOrEmail },
+                        { email: usernameOrEmail },
+                    ],
+                },
+            });
+
+            if (!existingUser) {
+                throw new Error('Sorry, user does not exist!');
+            }
+
+            const isPasswordCorrect = await bcrypt.compare(password, existingUser.password);
+
+            if (!isPasswordCorrect) {
+                throw new Error('Incorrect password!');
+            }
+
+            const userToken = JWTService.generateTokenForUser({ id: existingUser.id, username: existingUser.username });
+
+            ctx.res.cookie('__connectify_token', userToken, {
+                httpOnly: true,
+                secure: false,
+                maxAge: 1000 * 60 * 60 * 24,
+                sameSite: 'lax',
+                path: '/',
+            });
+
+            return { ...existingUser, authToken: userToken }
+
+        } catch (error: any) {
+            console.error('Error in loginUser:', error);
             throw new Error(error.message || 'An unexpected error occurred.');
         }
     }
 }
 
-export const resolvers = { mutations }
+export const resolvers = { queries, mutations }
 

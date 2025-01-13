@@ -5,6 +5,8 @@ import { expressMiddleware } from '@apollo/server/express4';
 import bodyParser from 'body-parser';
 import cookieParser from 'cookie-parser'
 import { Auth } from './auth';
+import JWTService from '../services/JWTService';
+import { GraphqlContext } from '../interfaces';
 
 export async function initServer() {
     const app = express();
@@ -25,7 +27,7 @@ export async function initServer() {
             ${Auth.types}
 
             type Query {
-                sayHello: String
+                ${Auth.queries}
             }
             
             type Mutation {
@@ -34,9 +36,9 @@ export async function initServer() {
         `,
         resolvers: {
             Query: {
-                sayHello: () => "Hello"
+                ...Auth.resolvers.queries
             },
-            
+
             Mutation: {
                 ...Auth.resolvers.mutations
             }
@@ -49,7 +51,34 @@ export async function initServer() {
     app.use(
         '/graphql',
         // @ts-ignore
-        expressMiddleware(graphqlServer)
+        expressMiddleware(graphqlServer, {
+            context: async ({ req, res }: { req: Request; res: Response }): Promise<GraphqlContext> => {
+                // Retrieve token from cookies
+                let token = req.cookies["__connectify_token"];
+
+                // Fallback to Authorization header if cookie is not set
+                if (!token && req.headers.authorization) {
+                    token = req.headers.authorization.split("Bearer ")[1];
+                }
+
+                let user;
+                if (token) {
+                    try {
+                        // Decode the token to retrieve user information
+                        user = JWTService.decodeToken(token);
+                        console.log("Decoded user:", user);
+                    } catch (error) {
+                        console.error("Error decoding token:", error);
+                    }
+                }
+
+                return {
+                    user,
+                    req,
+                    res,
+                };
+            },
+        })
     );
 
 

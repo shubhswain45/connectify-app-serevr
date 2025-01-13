@@ -23,3 +23,8 @@ export interface VerifyEmailInput {
     password: string;
     token: string;
 }
+
+export interface LoginUserInput {
+    usernameOrEmail: string; // Changed to lowercase 'string' for TypeScript compatibility
+    password: string;
+}
