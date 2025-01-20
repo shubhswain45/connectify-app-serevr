@@ -1,9 +1,10 @@
 import { prismaClient } from "../../clients/db";
 import { emailVerificationClient } from "../../clients/redis";
-import { GraphqlContext, LoginUserInput, SignupUserInput, VerifyEmailInput } from "../../interfaces";
+import { GraphqlContext, LoginUserInput, ResetPasswordInput, SignupUserInput, VerifyEmailInput } from "../../interfaces";
 import JWTService from "../../services/JWTService";
 import NodeMailerService from "../../services/NodeMailerService";
 import bcrypt from 'bcryptjs'
+import crypto from 'crypto';
 
 const queries = {
     getCurrentUser: async (parent: any, args: any, ctx: GraphqlContext) => {
@@ -151,7 +152,84 @@ const mutations = {
             console.error('Error in loginUser:', error);
             throw new Error(error.message || 'An unexpected error occurred.');
         }
-    }
+    },
+
+    forgotPassword: async (parent: any, { usernameOrEmail }: { usernameOrEmail: string }, ctx: GraphqlContext) => {
+        try {
+            // Check if the user exists by email or username
+            const user = await prismaClient.user.findFirst({
+                where: {
+                    OR: [
+                        { email: usernameOrEmail },
+                        { username: usernameOrEmail }
+                    ]
+                }
+            });
+
+            if (!user) {
+                throw new Error("User not found.");
+            }
+
+            if (!user.resetPasswordToken || !user.resetPasswordTokenExpiresAt || Date.now() > new Date(user.resetPasswordTokenExpiresAt).getTime()) {
+                // Generate reset token
+                const resetToken = crypto.randomBytes(20).toString("hex");
+                const resetTokenExpiresAt = new Date(Date.now() + 1 * 60 * 60 * 1000); // 1 hour
+
+                // Save the updated user
+                await prismaClient.user.update({
+                    where: { id: user.id }, // Use the user's ID for the update
+                    data: { resetPasswordToken: resetToken, resetPasswordTokenExpiresAt: resetTokenExpiresAt },
+                });
+
+                // Send reset email
+                await NodeMailerService.sendPasswordResetEmail(user.email, `http://localhost:3000/reset-password/${resetToken}`)
+            }
+
+            // Send response
+            return true;
+        } catch (error: any) {
+            console.error("Error in forgotPassword: ", error);
+            throw new Error(error.message);
+        }
+    },
+
+    resetPassword: async (parent: any, { input }: { input: ResetPasswordInput }, ctx: GraphqlContext) => {
+        try {
+            const { token, newPassword, confirmPassword } = input;
+
+            if (newPassword !== confirmPassword) {
+                throw new Error("Passwords do not match");
+            }
+
+            const user = await prismaClient.user.findUnique({
+                where: {
+                    resetPasswordToken: token,
+                },
+            });
+
+            if (!user || !user.resetPasswordTokenExpiresAt || user.resetPasswordTokenExpiresAt <= new Date()) {
+                throw new Error("Invalid or expired reset token");
+            }
+
+            const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+            await prismaClient.user.update({
+                where: { id: user.id },
+                data: {
+                    password: hashedPassword,
+                    resetPasswordToken: null,
+                    resetPasswordTokenExpiresAt: null,
+                },
+            });
+
+            NodeMailerService.sendResetSuccessEmail(user?.email || "");
+            return true;
+
+        } catch (error: any) {
+            throw new Error(error.message);
+        }
+    },
+
 }
 
 export const resolvers = { queries, mutations }

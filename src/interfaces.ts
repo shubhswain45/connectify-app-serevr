@@ -28,3 +28,17 @@ export interface LoginUserInput {
     usernameOrEmail: string; // Changed to lowercase 'string' for TypeScript compatibility
     password: string;
 }
+
+export interface ResetPasswordInput {
+    token: string;
+    newPassword: string;
+    confirmPassword: string;
+}
+
+export interface CreateTrackPayload {
+    title: string;           // Track title, required
+    audioFileUrl: string;    // URL to the audio file, required
+    coverImageUrl?: string;  // URL to the cover image, optional
+    artist?: string;  // URL to the cover image, optional
+    duration: string
+}

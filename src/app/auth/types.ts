@@ -36,5 +36,10 @@ export const types = `#graphql
         password: String!
     }
 
+    input ResetPasswordInput {
+        token: String!
+        newPassword: String!
+        confirmPassword: String!
+    }
 
 `

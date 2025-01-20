@@ -22,6 +22,41 @@ model User {
   bio             String? // Optional bio
   profileImageURL String? // Optional profile image URL
 
+  resetPasswordToken          String?   @unique // Reset password token
+  resetPasswordTokenExpiresAt DateTime? // Expiry of reset password token
+  tracks                      Track[] // Relation: tracks authored by the user
+  
+  likes Like[] // Relation to track likes on this post
+
   createdAt DateTime @default(now()) // User creation timestamp
   updatedAt DateTime @updatedAt // Auto-updated timestamp
 }
+
+model Track {
+  id            String   @id @default(cuid()) // Unique identifier
+  title         String // Track title
+  artist        String? // Name of the artist or band
+  duration      String // Duration of the track in seconds
+  coverImageUrl String? // Optional URL to the cover image
+  audioFileUrl  String // URL to the audio file
+  createdAt     DateTime @default(now()) // Track creation timestamp
+  updatedAt     DateTime @updatedAt // Auto-updated timestamp
+
+  likes Like[] // Relation to track likes on this post
+
+  authorId String // Foreign key for the User
+  author   User   @relation(fields: [authorId], references: [id]) // Relation to User model
+}
+
+model Like {
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  track   Track  @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  trackId String
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, trackId]) // Ensure that a user can like a post only once
+}
+
